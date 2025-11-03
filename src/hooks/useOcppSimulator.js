@@ -2,14 +2,15 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useCpState } from '../context/CpContext';
 import { useWebSocket } from './useWebSocket';
+import axios from 'axios';
 
 export const useOcppSimulator = () => {
     const { cpState, actions } = useCpState();
     const { baseUrl, cpId } = cpState.config;
-    
+
     // Get communication tools from useWebSocket, passing user-defined config
     const { isConnected, sendMessage, lastMessage } = useWebSocket(baseUrl, cpId);
-    
+
     // Map to hold Promises awaiting a CallResult (Type 3)
     const callPromises = useRef(new Map());
 
@@ -29,7 +30,7 @@ export const useOcppSimulator = () => {
         if (!lastMessage || !cpId) return;
 
         const [type, messageId, actionOrPayload, errorDetails] = lastMessage;
-        
+
         actions.addLog(cpId, { direction: 'RECV', action: messageId, payload: lastMessage });
 
         // 1. Handle Type 3 (CallResult - CSMS Response to a CP Request)
@@ -40,22 +41,22 @@ export const useOcppSimulator = () => {
                 resolver.resolve({ payload: actionOrPayload });
                 callPromises.current.delete(messageId);
             }
-        } 
-        
+        }
+
         // 2. Handle Type 2 (Call - CSMS Request to the CP Simulator)
         else if (type === 2) {
             // Must respond immediately to simulate compliant CP behavior
             // We will implement handleIncomingCall later
             // handleIncomingCall(messageId, actionOrPayload, errorDetails); 
         }
-        
+
         // 3. Handle Type 4 (CallError)
         else if (type === 4) {
-             const resolver = callPromises.current.get(messageId);
-             if (resolver) {
-                 resolver.reject(new Error(`OCPP Error from CSMS: ${errorDetails}`));
-                 callPromises.current.delete(messageId);
-             }
+            const resolver = callPromises.current.get(messageId);
+            if (resolver) {
+                resolver.reject(new Error(`OCPP Error from CSMS: ${errorDetails}`));
+                callPromises.current.delete(messageId);
+            }
         }
     }, [lastMessage, cpId, actions]);
 
@@ -70,23 +71,86 @@ export const useOcppSimulator = () => {
         return new Promise((resolve, reject) => {
             callPromises.current.set(messageId, { resolve, reject });
             sendMessage(message);
-            
+
             // Timeout safety net
             setTimeout(() => {
                 if (callPromises.current.has(messageId)) {
                     callPromises.current.delete(messageId);
                     reject(new Error(`Timeout waiting for ${action} confirmation.`));
                 }
-            }, 15000); 
+            }, 15000);
         });
     }, [cpId, sendMessage, actions]);
+
+    // 💡 NEW: Function to fetch initial configuration via REST
+    const fetchCpConfig = useCallback(async (currentCpId) => {
+        try {
+            // Assume your CSMS has a REST endpoint like /adminApi/config/<CP_MANUAL>
+            // This endpoint must return data, e.g., { connectorCount: 4 }
+            const apiUrl = baseUrl.replace('ws', 'http'); // Convert WS to HTTP
+            const response = await axios.get(`${apiUrl}/adminApi/config/${currentCpId}`);
+
+            // Assuming your backend responds with the number of connectors
+            const connectorCount = response.data.connectorCount || 1;
+
+            // Dynamically create the initial connector array (1-indexed)
+            const initialConnectors = Array.from({ length: connectorCount }, (_, i) => ({
+                connectorId: i + 1,
+                status: "Available",
+                currentTransactionId: null,
+            }));
+
+            // Update the global state with the dynamic data
+            actions.updateConnectors(currentCpId, initialConnectors);
+            actions.addLog(currentCpId, { direction: 'SYSTEM', text: `Fetched ${connectorCount} connectors from CSMS.` });
+
+        } catch (error) {
+            actions.addLog(currentCpId, { direction: 'ERROR', text: `Failed to fetch config from REST: ${error.message}` });
+        }
+    }, [baseUrl, actions]); // Dependency on baseUrl is needed for the API call
+
+    // 💡 NEW: Function to perform the full boot sequence
+    const bootAndConfigure = useCallback(async () => {
+        if (!isConnected || !cpId) {
+            actions.addLog(cpId, { direction: 'ERROR', text: "Cannot boot: WebSocket is not open." });
+            return;
+        }
+
+        try {
+            // 1. Send BootNotification and AWAIT the CSMS confirmation (Type 3)
+            // actions.addLog(cpId, { direction: 'SYSTEM', text: "Starting OCPP Boot Notification sequence..." });
+
+            const bootConf = await sendOcppRequest("BootNotification", {
+                chargePointVendor: "SimV",
+                chargePointModel: "TestModel",
+                chargeBoxSerialNumber: cpId,
+            });
+
+            // 2. Check the response status
+            if (bootConf.payload.status === 'Accepted') {
+                actions.addLog(cpId, { direction: 'SYSTEM', text: `Boot Accepted! Heartbeat Interval: ${bootConf.payload.interval}s` });
+
+                // 3. Protocol Accepted: NOW fetch configuration via REST
+                await fetchCpConfig(cpId);
+
+                // 4. Start Heartbeat Timer (Placeholder for later implementation)
+                // actions.setHeartbeatInterval(cpId, bootConf.payload.interval); 
+
+            } else {
+                actions.addLog(cpId, { direction: 'ERROR', text: `Boot Rejected: Status ${bootConf.payload.status}` });
+            }
+        } catch (error) {
+            actions.addLog(cpId, { direction: 'ERROR', text: `Boot failed: ${error.message}` });
+        }
+    }, [isConnected, cpId, actions, sendOcppRequest, fetchCpConfig]);
 
 
     return {
         // Expose the core function for the test runner to use
-        sendOcppRequest, 
+        sendOcppRequest,
         // Expose the current status
         isConnected,
         // ... other helper functions will be exposed here
+        bootAndConfigure
     };
 };

@@ -1,5 +1,5 @@
 // src/components/setup/SetupScreen.jsx (Conceptual)
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useCpState } from '../../context/CpContext';
 
 const SetupScreen = () => {

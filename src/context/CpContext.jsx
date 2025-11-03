@@ -18,7 +18,7 @@ const initialCpState = {
   chargePoints: {},
 };
 
-import { CpActions } from './CpActions';
+import { CpActions } from "./CpActions";
 
 // --- REDUCER ---
 const cpReducer = (state, action) => {
@@ -40,13 +40,7 @@ const cpReducer = (state, action) => {
           ...state.chargePoints,
           [newCpId]: state.chargePoints[newCpId] || {
             connectionStatus: "Connecting",
-            connectors: [
-              {
-                connectorId: 1,
-                status: "Available",
-                currentTransactionId: null,
-              },
-            ],
+            connectors: [],
             liveLogs: [],
           },
         },
@@ -78,6 +72,21 @@ const cpReducer = (state, action) => {
         },
       };
     // ... other cases
+
+    case CpActions.UPDATE_CONNECTORS:
+      if (!cpId) return state;
+      return {
+        ...state,
+        chargePoints: {
+          ...state.chargePoints,
+          [cpId]: {
+            ...state.chargePoints[cpId],
+            // Replace the empty array with the dynamic data from the backend
+            connectors: payload.newConnectorArray,
+          },
+        },
+      };
+
     default:
       return state;
   }
@@ -119,6 +128,13 @@ export const CpProvider = ({ children }) => {
       });
     }, []),
     // ... other action handlers will be added here
+    updateConnectors: useCallback((cpId, newConnectorArray) => {
+      dispatch({
+        type: CpActions.UPDATE_CONNECTORS,
+        cpId,
+        payload: { newConnectorArray },
+      });
+    }, []),
   };
 
   return (
