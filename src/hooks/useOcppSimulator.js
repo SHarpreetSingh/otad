@@ -45,6 +45,7 @@ export const useOcppSimulator = () => {
 
         // 2. Handle Type 2 (Call - CSMS Request to the CP Simulator)
         else if (type === 2) {
+            handleIncomingCSMSCommand(messageId, action, payload);
             // Must respond immediately to simulate compliant CP behavior
             // We will implement handleIncomingCall later
             // handleIncomingCall(messageId, actionOrPayload, errorDetails); 
@@ -144,6 +145,35 @@ export const useOcppSimulator = () => {
         }
     }, [isConnected, cpId, actions, sendOcppRequest, fetchCpConfig]);
 
+// Inside src/hooks/useOcppSimulator.js
+
+const handleIncomingCSMSCommand = useCallback((messageId, action, payload) => {
+    actions.addLog(cpId, { direction: 'RECV', action, payload });
+
+    let responsePayload;
+
+    switch (action) {
+        case 'RemoteStartTransaction':
+            // 💡 Handle the core business logic (e.g., check connector availability)
+            responsePayload = handleRemoteStart(payload); 
+            break;
+        case 'RemoteStopTransaction':
+            responsePayload = handleRemoteStop(payload);
+            break;
+        case 'GetConfiguration':
+            // Need to return a list of keys and values from your internal config state
+            responsePayload = handleGetConfiguration(payload); 
+            break;
+        // ... (Add cases for ChangeConfiguration, UnlockConnector, etc.)
+        default:
+            // Send a ProtocolError if the message is unrecognized
+            return sendError(messageId, action, "NotImplemented"); 
+    }
+
+    // After processing, send the required confirmation back to the CSMS (Type 3)
+    sendMessage(JSON.stringify([3, messageId, responsePayload]));
+    
+}, [cpId, actions, sendMessage, /* internal handlers like handleRemoteStart */]);
 
     return {
         // Expose the core function for the test runner to use
