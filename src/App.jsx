@@ -6,16 +6,18 @@ import SetupScreen from "./components/setup/SetupScreen";
 import LogMonitor from "../src/components/tester/LogMonitor";
 
 // 💡 IMPORT the Brain, even though we won't use its functions yet
-import { useOcppSimulator } from "./hooks/useOcppSimulator";
+// import { useOcppSimulator } from "./hooks/useOcppSimulator";
 import { useCpLifecycle } from "./hooks/useCpLifecycle";
+import { useTestRunner } from "./hooks/useTestRunner";
 
 // --- Main App Component ---
 const MainContent = () => {
+  const { scenarios, runScenario, isRunnerReady } = useTestRunner();
   const { cpState } = useCpState();
   const { baseUrl, cpId } = cpState.config;
 
   // 💡 Hook the Brain here. It will start connecting when config is set!
-  const { isConnected } = useOcppSimulator();
+//   const { isConnected } = useOcppSimulator();
 
   useCpLifecycle();
 
@@ -24,22 +26,27 @@ const MainContent = () => {
   }
 
   // --- Display Connection Status (Test Output) ---
-  const connectionStatus = isConnected ? "✅ CONNECTED" : "❌ DISCONNECTED";
+//   const connectionStatus = isConnected ? "✅ CONNECTED" : "❌ DISCONNECTED";
 
   return (
-    <div>
-      <h1>OCPP Simulator Dashboard</h1>
-      <p>
-        Target: <strong>{cpId}</strong> via <strong>{baseUrl}</strong>
-      </p>
-      <h2>
-        Status:{" "}
-        <span style={{ color: isConnected ? "green" : "red" }}>
-          {connectionStatus}
-        </span>
-      </h2>
+    <div style={{ padding: "20px" }}>
+      {/* ... (existing headers, status, etc.) ... */}
 
-      {/* 💡 Log Monitor Placeholder */}
+      <h2>Test Runner Controls</h2>
+      <div style={{ display: "flex", gap: "10px" }}>
+        {scenarios.map((scenarioName) => (
+          <button
+            key={scenarioName}
+            // 💡 Click Handler: Calls runScenario with the selected name
+            onClick={() => runScenario(scenarioName, cpId)}
+            // Button is disabled until the simulator is connected and booted
+            disabled={!isRunnerReady}
+          >
+            Run: **{scenarioName}**
+          </button>
+        ))}
+      </div>
+
       <LogMonitor cpId={cpId} />
     </div>
   );
