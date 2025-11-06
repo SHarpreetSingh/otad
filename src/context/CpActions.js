@@ -5,4 +5,5 @@ export const CpActions = {
   ADD_LOG_ENTRY: "ADD_LOG_ENTRY",
   // ... more actions will be added later
   UPDATE_CONNECTORS: 'UPDATE_CONNECTORS',
+  UPDATE_CONNECTOR_STATUS: 'UPDATE_CONNECTOR_STATUS',
 };

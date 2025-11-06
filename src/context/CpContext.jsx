@@ -87,6 +87,28 @@ const cpReducer = (state, action) => {
         },
       };
 
+    case CpActions.UPDATE_CONNECTOR_STATUS:
+      return {
+        ...state,
+        chargePoints: {
+          ...state.chargePoints,
+          [action.cpId]: {
+            ...state.chargePoints[action.cpId],
+            connectors: state.chargePoints[action.cpId].connectors.map((c) =>
+              c.connectorId === action.payload.connectorId
+                ? {
+                    ...c,
+                    status: action.payload.newStatus,
+                    error: action.payload.errorCode || "NoError",
+                  }
+                : c
+            ),
+          },
+        },
+      };
+
+    
+
     default:
       return state;
   }
@@ -135,6 +157,18 @@ export const CpProvider = ({ children }) => {
         payload: { newConnectorArray },
       });
     }, []),
+
+    updateConnectorStatus: useCallback(
+      (cpId, connectorId, newStatus, errorCode) => {
+        dispatch({
+          type: CpActions.UPDATE_CONNECTOR_STATUS,
+          cpId,
+          payload: { connectorId, newStatus, errorCode },
+        });
+      },
+      []
+    ),
+
   };
 
   return (

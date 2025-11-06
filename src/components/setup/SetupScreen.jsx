@@ -4,8 +4,8 @@ import { useCpState } from '../../context/CpContext';
 
 const SetupScreen = () => {
     // Default values for quick testing
-    const [baseUrl, setBaseUrl] = useState('ws://127.0.0.1:3000');
-    const [cpId, setCpId] = useState('CP_MANUAL_003');
+    const [baseUrl, setBaseUrl] = useState("ws://localhost:3000");
+    const [cpId, setCpId] = useState("CP_MANUAL_003");
     
     const { actions } = useCpState();
 
