@@ -70,10 +70,9 @@ export const useTestRunner = () => {
 
         const resultText = passed ? 'PASSED' : 'FAILED';
         actions.addLog(cpId, { direction: 'SYSTEM', text: `--- Scenario ${resultText}: ${scenario.name} ---` });
-    }, [
-        actions,
-        isConnected,     // Needed to check if connection is active
+    }, [isConnected,     // Needed to check if connection is active
         sendOcppRequest, // Needed to send messages (wrapped in useCallback in useOcppSimulator)
+        actions
     ]);
 
     return {

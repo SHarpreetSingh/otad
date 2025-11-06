@@ -41,10 +41,7 @@ export const useOcppSimulator = () => {
 
         // 2. Handle Type 2 (Call - CSMS Request to the CP Simulator)
         else if (type === 2) {
-<<<<<<< Updated upstream
-=======
             // handleIncomingCSMSCommand(messageId, actionOrPayload, errorDetails);
->>>>>>> Stashed changes
             // Must respond immediately to simulate compliant CP behavior
             // We will implement handleIncomingCall later
             // handleIncomingCall(messageId, actionOrPayload, errorDetails); 
@@ -280,10 +277,8 @@ export const useOcppSimulator = () => {
         }
     }, [isConnected, cpId, actions, sendOcppRequest, fetchCpConfig]);
 
-<<<<<<< Updated upstream
 
-=======
->>>>>>> Stashed changes
+
     return {
         // Expose the core function for the test runner to use
         sendOcppRequest,
