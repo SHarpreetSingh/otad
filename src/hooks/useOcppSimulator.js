@@ -13,7 +13,8 @@ export const useOcppSimulator = () => {
     const callPromises = useRef(new Map());
     const chargePointState = cpState.chargePoints[cpId];
 
-    // Get communication tools from useWebSocket, passing user-defined config
+    const handleIncomingCSMSCommandRef = useRef();
+
     const handleNewWebSocketMessage = useCallback((message) => {
         // 💡 This is where you put the old logic from EFFECT 2.
 
@@ -41,7 +42,7 @@ export const useOcppSimulator = () => {
 
         // 2. Handle Type 2 (Call - CSMS Request to the CP Simulator)
         else if (type === 2) {
-            // handleIncomingCSMSCommand(messageId, actionOrPayload, errorDetails);
+            handleIncomingCSMSCommandRef.current(messageId, actionOrPayload, errorDetails);
             // Must respond immediately to simulate compliant CP behavior
             // We will implement handleIncomingCall later
             // handleIncomingCall(messageId, actionOrPayload, errorDetails); 
@@ -59,9 +60,161 @@ export const useOcppSimulator = () => {
         //     }
         // }
 
-    }, [cpId, actions, callPromises,]);
+    }, [cpId, actions, callPromises]);
 
     const { isConnected, sendMessage } = useWebSocket(baseUrl, cpId, handleNewWebSocketMessage);
+
+    // --- Core Logic: Send Request and Wait ---
+    const sendOcppRequest = useCallback((action, payload) => {
+        const messageId = Date.now().toString();
+        const message = JSON.stringify([2, messageId, action, payload]);
+
+        // Log the outgoing request
+        actions.addLog(cpId, { direction: 'SENT', action, payload });
+
+        return new Promise((resolve, reject) => {
+            callPromises.current.set(messageId, { resolve, reject });
+            sendMessage(message);
+
+            // Timeout safety net
+            setTimeout(() => {
+                if (callPromises.current.has(messageId)) {
+                    callPromises.current.delete(messageId);
+                    reject(new Error(`Timeout waiting for ${action} confirmation.`));
+                }
+            }, 15000);
+        });
+    }, [cpId, sendMessage, actions]);
+
+    const sendError = useCallback(
+        (messageId,
+            requestedAction, errorCode,
+            description = "An internal simulator error occurred.", errorDetails = {}) => {
+
+            // 1. Format the mandatory error description based on the code
+            let errorDescription = description;
+            if (errorCode === "NotImplemented") {
+                errorDescription = `Action '${requestedAction}' is not supported by the simulator.`;
+            }
+
+            // 2. Build the Type 4 message array
+            const errorMsg = JSON.stringify([
+                4,
+                messageId,
+                errorCode,
+                errorDescription,
+                errorDetails
+            ]);
+
+            // 3. Log and Send the message immediately via the low-level utility
+            actions.addLog(cpId, { direction: 'SENT_ERROR', action: requestedAction, payload: { errorCode, errorDescription } });
+            sendMessage(errorMsg);
+
+            // Note: We don't return a Promise because we are not waiting for a response here.
+
+        }, [cpId, actions, sendMessage]);
+
+    const handleRemoteStart = useCallback((payload) => {
+        const connectorId = payload.connectorId || 0; // 0 for all connectors or specific ID
+        const idTag = payload.idTag;
+
+        // 1. Check conditions (Is the connector available? Is the tag valid?)
+        // In a simple simulator, you might just check availability.
+        const connector = chargePointState.connectors.find(c => c.connectorId === connectorId);
+        console.log(connector, connector)
+
+        if (connector && connector.status === "Available" && idTag) {
+            // 2. Update simulator state (e.g., set connector status to 'Preparing')
+            actions.updateConnectorStatus(cpId, connectorId, 'Preparing');
+            actions.addLog(cpId, { direction: 'SYSTEM', text: `RemoteStart ACCEPTED for Connector ${connectorId}` });
+
+            sendOcppRequest("StatusNotification", {
+                connectorId,
+                status: "Preparing", // Send the new status
+                errorCode: "NoError"
+            });
+
+            // 3. Return a successful confirmation status
+            return { status: "Accepted" };
+        } else {
+            // 4. Return an error status
+            actions.addLog(cpId, { direction: 'ERROR', text: `RemoteStart REJECTED: Connector ${connectorId} not Available.` });
+            return { status: "Rejected" };
+        }
+    }, [cpId, chargePointState, actions, sendOcppRequest]);
+
+    const handleRemoteStop = useCallback((payload) => {
+        // console.log(payload)
+        const transactionIdToStop = payload.csTransactionId;
+
+        // 1. Find the connector running this transaction
+        //    Assumes 'chargePointState' is available in scope.
+        const connectorToStop = chargePointState.connectors.find(c =>
+            c.currentTransactionId === transactionIdToStop
+        );
+
+        if (connectorToStop) {
+            const connectorId = connectorToStop.connectorId;
+
+            // 2. Log Acceptance and update state to 'Finishing'
+            actions.updateConnectorStatus(cpId, connectorId, 'Finishing');
+            actions.addLog(cpId, {
+                direction: 'SYSTEM',
+                text: `RemoteStop ACCEPTED for Txn ID ${transactionIdToStop}. Status set to Finishing.`
+            });
+
+            // 4. Return the required Confirmation to the CSMS for the RemoteStop command.
+            return { status: "Accepted" };
+
+        } else {
+            // 5. Reject if transaction ID is not found or not active
+            actions.addLog(cpId, {
+                direction: 'ERROR',
+                text: `RemoteStop REJECTED: Transaction ID ${transactionIdToStop} not active.`
+            });
+            return { status: "Rejected" };
+        }
+    }, [
+        cpId,
+        actions,
+        chargePointState, //
+    ]);
+
+    const handleIncomingCSMSCommand = useCallback((messageId, action, payload) => {
+        actions.addLog(cpId, { direction: 'RECV', action, payload });
+
+        let responsePayload;
+
+        switch (action) {
+            case 'RemoteStartTransaction':
+                // 💡 Handle the core business logic (e.g., check connector availability)
+                responsePayload = handleRemoteStart(payload);
+                break;
+            case 'RemoteStopTransaction':
+                responsePayload = handleRemoteStop(payload);
+                break;
+            // case 'GetConfiguration':
+            //     // Need to return a list of keys and values from your internal config state
+            //     responsePayload = handleGetConfiguration(payload);
+            //     break;
+            // ... (Add cases for ChangeConfiguration, UnlockConnector, etc.)
+            default:
+                // Send a ProtocolError if the message is unrecognized
+                return sendError(messageId, action, "NotImplemented");
+        }
+
+        // After processing, send the required confirmation back to the CSMS (Type 3)
+        sendMessage(JSON.stringify([3, messageId, responsePayload]));
+
+    }, [cpId,
+        actions,
+        sendMessage,
+        sendError,
+        handleRemoteStart,
+        handleRemoteStop
+    ]);
+
+    handleIncomingCSMSCommandRef.current = handleIncomingCSMSCommand;
 
     // --- EFFECT 1: Update Global Connection Status ---
     useEffect(() => {
@@ -95,120 +248,6 @@ export const useOcppSimulator = () => {
     }, [
         isConnected, cpId, actions, baseUrl
     ]);
-
-    const sendError = useCallback(
-        (messageId,
-            requestedAction, errorCode,
-            description = "An internal simulator error occurred.", errorDetails = {}) => {
-
-            // 1. Format the mandatory error description based on the code
-            let errorDescription = description;
-            if (errorCode === "NotImplemented") {
-                errorDescription = `Action '${requestedAction}' is not supported by the simulator.`;
-            }
-
-            // 2. Build the Type 4 message array
-            const errorMsg = JSON.stringify([
-                4,
-                messageId,
-                errorCode,
-                errorDescription,
-                errorDetails
-            ]);
-
-            // 3. Log and Send the message immediately via the low-level utility
-            actions.addLog(cpId, { direction: 'SENT_ERROR', action: requestedAction, payload: { errorCode, errorDescription } });
-            sendMessage(errorMsg);
-
-            // Note: We don't return a Promise because we are not waiting for a response here.
-
-        }, [cpId, actions, sendMessage])
-
-    // --- Core Logic: Send Request and Wait ---
-    const sendOcppRequest = useCallback((action, payload) => {
-        const messageId = Date.now().toString();
-        const message = JSON.stringify([2, messageId, action, payload]);
-
-        // Log the outgoing request
-        actions.addLog(cpId, { direction: 'SENT', action, payload });
-
-        return new Promise((resolve, reject) => {
-            callPromises.current.set(messageId, { resolve, reject });
-            sendMessage(message);
-
-            // Timeout safety net
-            setTimeout(() => {
-                if (callPromises.current.has(messageId)) {
-                    callPromises.current.delete(messageId);
-                    reject(new Error(`Timeout waiting for ${action} confirmation.`));
-                }
-            }, 15000);
-        });
-    }, [cpId, sendMessage, actions]);
-
-    const handleRemoteStart = useCallback((payload) => {
-        const connectorId = payload.connectorId || 0; // 0 for all connectors or specific ID
-        const idTag = payload.idTag;
-
-        // 1. Check conditions (Is the connector available? Is the tag valid?)
-        // In a simple simulator, you might just check availability.
-        const connector = chargePointState.connectors.find(c => c.connectorId === connectorId);
-
-        if (connector && connector.status === "Available" && idTag) {
-            // 2. Update simulator state (e.g., set connector status to 'Preparing')
-            actions.updateConnectorStatus(cpId, connectorId, 'Preparing');
-            actions.addLog(cpId, { direction: 'SYSTEM', text: `RemoteStart ACCEPTED for Connector ${connectorId}` });
-
-            sendOcppRequest("StatusNotification", {
-                connectorId,
-                status: "Preparing", // Send the new status
-                errorCode: "NoError"
-            });
-
-            // 3. Return a successful confirmation status
-            return { status: "Accepted" };
-        } else {
-            // 4. Return an error status
-            actions.addLog(cpId, { direction: 'ERROR', text: `RemoteStart REJECTED: Connector ${connectorId} not Available.` });
-            return { status: "Rejected" };
-        }
-    }, [cpId, chargePointState, actions, sendOcppRequest]);
-
-    const handleIncomingCSMSCommand = useCallback((messageId, action, payload) => {
-        actions.addLog(cpId, { direction: 'RECV', action, payload });
-
-        let responsePayload;
-
-        switch (action) {
-            case 'RemoteStartTransaction':
-                // 💡 Handle the core business logic (e.g., check connector availability)
-                responsePayload = handleRemoteStart(payload);
-                break;
-            // case 'RemoteStopTransaction':
-            //     responsePayload = handleRemoteStop(payload);
-            //     break;
-            // case 'GetConfiguration':
-            //     // Need to return a list of keys and values from your internal config state
-            //     responsePayload = handleGetConfiguration(payload);
-            //     break;
-            // ... (Add cases for ChangeConfiguration, UnlockConnector, etc.)
-            default:
-                // Send a ProtocolError if the message is unrecognized
-                return sendError(messageId, action, "NotImplemented");
-        }
-
-        // After processing, send the required confirmation back to the CSMS (Type 3)
-        sendMessage(JSON.stringify([3, messageId, responsePayload]));
-
-    }, [cpId,
-        actions,
-        sendMessage,
-        sendError,
-        handleRemoteStart
-
-    ]);
-
-    // --- EFFECT 2: Process Incoming Messages (The Protocol Handler) ---
 
     // 💡 NEW: Function to fetch initial configuration via REST
     const fetchCpConfig = useCallback(async (currentCpId) => {
