@@ -22,7 +22,7 @@ export const useWebSocket = (baseUrl, cpId, onMessageReceived) => {
 
         ws.onmessage = (event) => {
             try {
-                console.log("event", event)
+                // console.log("event", event)
                 const message = JSON.parse(event.data);
                 if (onMessageReceived) {
                     onMessageReceived(message);

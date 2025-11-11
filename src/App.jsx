@@ -31,7 +31,6 @@ const MainContent = () => {
   // Example component logic inside MainContent.jsx
 
   const simulateRemoteStart = async () => {
-    const { cpId } = cpState.config;
     const remoteApiUrl = `${apiUrl}/adminApi/chargers/${cpId}/remotestart`; // 💡adminApi/chargers/:cpId/remotestart
 
     const payload = {
@@ -39,25 +38,37 @@ const MainContent = () => {
       connectorId: 1,
     };
 
-    // actions.addLog(cpId, {
-    //   direction: "SYSTEM",
-    //   text: `Attempting to trigger RemoteStart via API...`,
-    // });
-
     try {
       // Axios call to your backend's test endpoint
-      const response = await axios.post(remoteApiUrl, payload);
+      await axios.post(remoteApiUrl, payload);
 
-      // actions.addLog(cpId, {
-      //   direction: "SYSTEM",
-      //   text: `RemoteStart command successfully sent to backend for dispatch.`,
-      // });
+      
     } catch (error) {
       console.log("err in api", error);
-      // actions.addLog(cpId, {
-      //   direction: "ERROR",
-      //   text: `API call failed: ${error.message}`,
-      // });
+      
+    }
+  };
+
+  // Example component logic (where your buttons live)
+
+  // Assume you expose the transaction ID via state or props:
+  // const activeTransactionId = 12345; // Get the currently running transaction ID
+
+  const simulateRemoteStop = async () => {
+    const remoteApiUrl = `${apiUrl}/adminApi/chargers/${cpId}/remotestop`; // 💡adminApi/chargers/:cpId/remotestart
+
+    try {
+      const payload = {
+        csTransactionId: 446,
+      };
+      // You must call the core function that sends a Type 2 Call (CSMS to CP)
+      // Since this is a simulation (API Trigger), you are simulating the CSMS sending a command TO your CP.
+      // We will call the function that handles Type 2 (Call) messages.
+
+      await axios.post(remoteApiUrl, payload);
+      console.log("Simulated: RemoteStopTransaction sent to CP.");
+    } catch (error) {
+      console.error("RemoteStop simulation failed:", error);
     }
   };
 
@@ -83,8 +94,8 @@ const MainContent = () => {
         ))}
       </div>
 
-      {/* 2. CSMS Command Simulation (CSMS-Initiated Scenarios)
-      <h2>CSMS Command Simulation (API Trigger)</h2>
+      {/* //2. CSMS Command Simulation (CSMS-Initiated Scenarios) */}
+      {/* <h2>CSMS Command Simulation (API Trigger)</h2>
       <div style={{ display: "flex", gap: "10px" }}>
         <button
           onClick={simulateRemoteStart}
@@ -93,13 +104,16 @@ const MainContent = () => {
         >
           Simulate **RemoteStartTransaction**
         </button>
-        <button disabled={true} title="Not Implemented Yet">
-          Simulate RemoteStop
+        <button
+          onClick={simulateRemoteStop}
+          disabled={!isRunnerReady } // Disable if no transaction is active
+          style={{ backgroundColor: "#FF5733", color: "white", border: "none" }}
+          title="Simulates CSMS sending a command to stop an active transaction."
+        >
+          Simulate **RemoteStopTransaction**
         </button>
       </div>
-      <hr />
-      
-      */}
+      <hr /> */}
 
       <LogMonitor cpId={cpId} />
     </div>
