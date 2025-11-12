@@ -107,8 +107,6 @@ const cpReducer = (state, action) => {
         },
       };
 
-    
-
     default:
       return state;
   }
