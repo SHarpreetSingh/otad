@@ -13,7 +13,6 @@ export const useTestRunner = () => {
     const { actions, cpState } = useCpState();
 
     const runScenario = useCallback(async (scenarioName, cpId) => {
-        const currentConnectors = cpState.chargePoints[cpId]?.connectors || [];
         if (!isConnected) {
             actions.addLog(cpId, { direction: 'ERROR', text: `Scenario failed: Not connected to CSMS.` });
             return;
@@ -28,120 +27,6 @@ export const useTestRunner = () => {
         actions.addLog(cpId, { direction: 'SYSTEM', text: `--- Starting Scenario: ${scenario.name} ---` });
         let passed = true;
         let currentTransactionId = null;
-
-        // ... (connection check, scenario lookup, logging start) ...
-        // for (const step of scenario.steps) {
-        //     try {
-        //         // console.log("step",step)
-        //         actions.addLog(cpId, { direction: 'SYSTEM', text: `Step: ${step.log}` });
-        //         let requestPayload = { ...step.payload }; // Clone the payload for modification
-        //         if (
-        //             (step.action === "MeterValues") &&
-        //             currentTransactionId) {
-        //             requestPayload.transactionId = currentTransactionId;
-        //             actions.addLog(cpId, { direction: 'SYSTEM', text: `  -> Injecting Transaction ID: ${currentTransactionId}` });
-        //         }
-
-        //         let conf
-        //         // 💡 CRITICAL: The AWAIT keyword ensures sequential execution 💡
-
-        //         if (step.action !== "RemoteStartTransaction" || step.action !== "RemoteStopTransaction") {
-        //             conf = await sendOcppRequest(step.action, requestPayload);
-        //         }
-
-        //         if (step.action === "StartTransaction") {
-
-        //             currentTransactionId = conf.payload.transactionId;
-        //             const connectorIdToUpdate = step.payload.connectorId;
-        //             if (currentTransactionId) {
-        //                 // 1. Capture the ID
-
-        //                 // 2. Map over the current connectors to find and update the target
-        //                 const updatedConnectors = currentConnectors.map(conn => {
-        //                     if (conn.connectorId === connectorIdToUpdate) {
-        //                         return {
-        //                             ...conn,
-        //                             status: 'Charging', // Status moves from 'Preparing' to 'Charging'
-        //                             currentTransactionId,
-        //                             idTag: step.payload.idTag // Store the initiating ID Tag
-        //                         };
-        //                     }
-        //                     return conn;
-        //                 });
-
-        //                 // 3. 💡 Use your new action to update the state with the modified array
-        //                 actions.updateConnectors(cpId, updatedConnectors);
-
-        //                 actions.addLog(cpId, { direction: 'SYSTEM', text: `  -> Transaction ${currentTransactionId} started on Connector ${connectorIdToUpdate}.` });
-        //             }
-        //         }
-
-        //         if (step.action === "StopTransaction") {
-        //             requestPayload.transactionId = currentTransactionId;
-
-        //             const currentConnectors = cpState.chargePoints[cpId]?.connectors || [];
-        //             const connectorIdToUpdate = requestPayload.connectorId // Assuming connector 1 or taken from payload
-        //             const updatedConnectors = currentConnectors.map(conn => {
-        //                 if (conn.connectorId === connectorIdToUpdate) {
-        //                     return {
-        //                         ...conn,
-        //                         status: 'Available',
-        //                         currentTransactionId: null,
-        //                         idTag: null
-        //                     };
-        //                 }
-        //                 return conn;
-        //             });
-        //             actions.updateConnectors(cpId, updatedConnectors);
-
-        //             // 4. Clear the scenario's tracked ID
-        //             currentTransactionId = null;
-        //             actions.addLog(cpId, { direction: 'SYSTEM', text: `Transaction ${requestPayload.transactionId} officially ended. Status reset to Available.` });
-        //         }
-        //         console.log("conf==>", conf)
-
-        //         // console.log("currentTransactionId", currentTransactionId)
-        //         let remoteApiUrl
-
-        //         const apiUrl = "http://localhost:3000" // Convert WS to HTTP
-        //         let apiResponse
-        //         if (step.action === "RemoteStopTransaction") {
-        //             requestPayload.csTransactionId = currentTransactionId;
-
-        //             console.log("apiResponse")
-        //             // 2. 🚨 ACTION: Call the Backend API (Simulating the CSMS sending the command)
-        //             remoteApiUrl = `${apiUrl}/adminApi/chargers/${cpId}/remotestop`;
-        //             apiResponse = await axios.post(remoteApiUrl, requestPayload);
-        //         }
-
-        //         if (step.action === "RemoteStartTransaction") {
-        //             // 2. 🚨 ACTION: Call the Backend API (Simulating the CSMS sending the command)
-        //             remoteApiUrl = `${apiUrl}/adminApi/chargers/${cpId}/remotestart`;
-        //             apiResponse = await axios.post(remoteApiUrl, requestPayload);
-        //             console.log(apiResponse)
-        //         }
-
-        //         // console.log("logg", conf)
-        //         // Check for rejection status in the confirmation response
-        //         if (conf && conf.payload.status && conf.payload.status.toLowerCase() === 'rejected') {
-        //             actions.addLog(cpId, { direction: 'ERROR', text: `${step.action} REJECTED by CSMS. Stopping scenario.` });
-        //             passed = false;
-        //             break;
-        //         }
-
-        //         if (apiResponse && (apiResponse.status !== 200 && apiResponse.status !== 202)) {
-        //             actions.addLog(cpId, { direction: 'ERROR', text: `${step.action} REJECTED by CSMS. Stopping scenario.` });
-        //             passed = false;
-        //             break;
-        //         }
-
-        //     } catch (error) {
-        //         // Catches errors like WebSocket closure or protocol error
-        //         actions.addLog(cpId, { direction: 'ERROR', text: `Scenario failed at ${step.action}: ${error.message}` });
-        //         passed = false;
-        //         break;
-        //     }
-        // }
 
         for (const step of scenario.steps) {
             let conf = null;
@@ -160,7 +45,6 @@ export const useTestRunner = () => {
                 ) {
                     requestPayload.transactionId = currentTransactionId;
                     // NOTE: csTransactionId is likely an internal backend detail, use transactionId for OCPP
-                    // requestPayload.csTransactionId = currentTransactionId; 
 
                     actions.addLog(cpId, { direction: 'SYSTEM', text: `  -> Injecting Transaction ID: ${currentTransactionId}` });
                 } else if (step.action === "StatusNotification"
@@ -185,7 +69,7 @@ export const useTestRunner = () => {
 
                 } else if (step.action === "StartTransaction" || step.action === "StopTransaction"
                     || step.action === "MeterValues" || step.action === "StatusNotification" ||
-                    step.action === "Heartbeat") {
+                    step.action === "Heartbeat"  || step.action === "Authorize") {
                     conf = await sendOcppRequest(step.action, requestPayload);
                 }
 
@@ -206,14 +90,14 @@ export const useTestRunner = () => {
                     actions.addLog(cpId, { direction: 'SYSTEM', text: `  -> Transaction ${currentTransactionId} started on Connector ${connectorIdToUpdate}.` });
                 }
 
-                console.log(step.action,cpState.chargePoints )
-                if (step.action === "StopTransaction" && conf && conf.payload.status === 'Accepted') {
+                // console.log(step.action,cpState.chargePoints,conf.payload.idTagInfo )
+                if (step.action === "StopTransaction" && conf && conf.payload.idTagInfo.status.toLowerCase() !== 'rejected') {
                     // Status transition back to Available after successful confirmation
-                    console.log(cpState.chargePoints)
                     const currentConnectors = cpState.chargePoints[cpId]?.connectors || [];
+                    const transactionIdToClear = requestPayload.transactionId;
 
                     const updatedConnectors = currentConnectors.map(conn => {
-                        if (conn.connectorId === cpId) {
+                        if (conn.currentTransactionId === transactionIdToClear) {
                             return { ...conn, status: 'Available', currentTransactionId: null, idTag: null };
                         }
                         return conn;
